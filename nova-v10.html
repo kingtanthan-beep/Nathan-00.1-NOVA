@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ht">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NOVA</title>
+<style>
+:root{--bg:#050b14;--fg:#d8f4ff;--dim:#6f93a8;--a:#31d7ff;--b:#7a5cff;--line:#12324a;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(120% 70% at 50% 25%,#0b2238 0,var(--bg) 70%);color:var(--fg);font-family:"Segoe UI",Roboto,system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;padding:env(safe-area-inset-top,0) 16px env(safe-area-inset-bottom,0)}
+header{width:100%;max-width:520px;display:flex;justify-content:space-between;align-items:center;padding:14px 0}
+h1{font-size:20px;letter-spacing:.35em;margin:0;font-weight:300}
+button,select,input,textarea{font:inherit;color:var(--fg);background:#0a1a2a;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--a)}
+#orbwrap{position:relative;width:min(70vw,280px);aspect-ratio:1;margin:10px 0}
+canvas{width:100%;height:100%}
+#status{color:var(--dim);font-size:14px;min-height:20px;text-align:center}
+#log{flex:1;width:100%;max-width:520px;overflow-y:auto;padding:8px 2px;display:flex;flex-direction:column;gap:10px}
+.m{padding:10px 14px;border-radius:14px;max-width:88%;line-height:1.45;font-size:15px}
+.u{align-self:flex-end;background:#10304a}
+.n{align-self:flex-start;background:#0c1d30;border:1px solid var(--line)}
+#bar{width:100%;max-width:520px;display:flex;gap:8px;padding:10px 0 14px;align-items:center}
+#talk{flex:1;padding:14px;font-size:16px;background:linear-gradient(90deg,var(--a),var(--b));color:#021018;border:0;font-weight:600}
+#talk.on{box-shadow:0 0 0 3px #31d7ff55}
+#setup{width:100%;max-width:520px;display:none;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#08141f;margin-bottom:8px}
+#setup.show{display:flex}
+textarea{min-height:110px;resize:vertical}
+label{font-size:13px;color:var(--dim)}
+@media (prefers-reduced-motion:reduce){canvas{opacity:.9}}
+</style>
+</head>
+<body>
+<header>
+  <h1>NOVA</h1>
+  <button id="cfgBtn" aria-label="Paramèt">Paramèt</button>
+</header>
+
+<div id="setup">
+  <label for="key">Kle Gemini ou (AIza...)</label>
+  <input id="key" type="password" autocomplete="off" placeholder="Kole kle a la">
+  <label for="model">Modèl</label>
+  <input id="model" value="gemini-2.5-flash">
+  <label for="voice">Vwa</label>
+  <select id="voice"></select>
+  <label><input type="checkbox" id="ttsOn" style="width:auto"> Itilize vwa Gemini (pi bon pou Kreyòl)</label>
+  <label for="ttsModel">Modèl vwa Gemini</label>
+  <input id="ttsModel" value="gemini-2.5-flash-preview-tts">
+  <label for="ttsVoice">Vwa Gemini</label>
+  <select id="ttsVoice"><option>Kore</option><option>Leda</option><option>Aoede</option><option>Zephyr</option><option>Despina</option><option>Sulafat</option></select>
+  <label for="mem">Sa NOVA sonje sou ou (yon bagay pa liy, ou ka edite oswa efase)</label>
+  <textarea id="mem" placeholder="Pa gen anyen pou kounye a"></textarea>
+  <label><input type="checkbox" id="phonOn" style="width:auto"> Reekri Kreyòl la an òtograf fransè (fonetik)</label>
+  <label for="ttsMode">Si kota vwa Gemini a fini</label>
+  <select id="ttsMode"><option value="wait">Tann pou kenbe menm vwa a (pi dousman)</option><option value="phone">Itilize vwa telefòn nan touswit</option></select>
+  <button id="save">Sove</button>
+</div>
+
+<div id="orbwrap"><canvas id="orb" width="560" height="560"></canvas></div>
+<div id="status">Peze bouton an pou kòmanse konvèsasyon</div>
+<div id="log"></div>
+<div id="bar">
+  <button id="talk">Kòmanse konvèsasyon</button>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{return localStorage.getItem(k)||d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+let history=[];let state='idle';let level=0;
+
+/* Orb */
+const cv=$('orb'),cx=cv.getContext('2d');let t=0;
+function draw(){
+  t+=0.02;const W=cv.width,c=W/2;cx.clearRect(0,0,W,W);
+  const amp=state==='speaking'?0.10+0.05*Math.sin(t*9):state==='listening'?0.07+level*0.2:0.025;
+  for(let r=0;r<4;r++){
+    cx.beginPath();
+    for(let i=0;i<=120;i++){
+      const a=i/120*Math.PI*2;
+      const rad=W*(0.20+r*0.06)*(1+amp*Math.sin(a*(3+r)+t*(1.5+r*.4)));
+      const x=c+Math.cos(a)*rad,y=c+Math.sin(a)*rad;
+      i?cx.lineTo(x,y):cx.moveTo(x,y);
+    }
+    cx.closePath();
+    cx.strokeStyle=r%2?'rgba(122,92,255,'+(0.8-r*0.15)+')':'rgba(49,215,255,'+(0.9-r*0.15)+')';
+    cx.lineWidth=3;cx.stroke();
+  }
+  const g=cx.createRadialGradient(c,c,0,c,c,W*0.2);
+  g.addColorStop(0,'rgba(49,215,255,.55)');g.addColorStop(1,'rgba(49,215,255,0)');
+  cx.fillStyle=g;cx.beginPath();cx.arc(c,c,W*0.2,0,7);cx.fill();
+  requestAnimationFrame(draw);
+}
+draw();
+
+/* UI helpers */
+function say(text,cls){const d=document.createElement('div');d.className='m '+cls;d.textContent=text;$('log').appendChild(d);$('log').scrollTop=1e9;}
+function setStatus(s){$('status').textContent=s}
+
+/* Settings */
+$('key').value=store.get('nova_key','');
+$('model').value=store.get('nova_model','gemini-2.5-flash');
+function getMem(){return store.get('nova_mem','').split('\n').map(x=>x.trim()).filter(Boolean)}
+function setMem(a){store.set('nova_mem',a.slice(-60).join('\n'));$('mem').value=a.slice(-60).join('\n')}
+$('mem').value=getMem().join('\n');
+$('ttsOn').checked=store.get('nova_tts','1')==='1';
+$('ttsModel').value=store.get('nova_tts_model','gemini-2.5-flash-preview-tts');
+$('ttsVoice').value=store.get('nova_tts_voice','Kore');
+$('ttsMode').value=store.get('nova_ttsmode','wait');
+$('phonOn').checked=store.get('nova_phon','1')==='1';
+$('cfgBtn').onclick=()=>$('setup').classList.toggle('show');
+$('save').onclick=()=>{
+  store.set('nova_key',$('key').value.trim());store.set('nova_model',$('model').value.trim());
+  store.set('nova_voice',$('voice').value);setMem($('mem').value.split('\n').map(x=>x.trim()).filter(Boolean));store.set('nova_tts',$('ttsOn').checked?'1':'0');store.set('nova_tts_model',$('ttsModel').value.trim());store.set('nova_tts_voice',$('ttsVoice').value);store.set('nova_ttsmode',$('ttsMode').value);store.set('nova_phon',$('phonOn').checked?'1':'0');
+  $('setup').classList.remove('show');setStatus('Paramèt yo sove');
+};
+if(!$('key').value)$('setup').classList.add('show');
+
+/* Voices */
+let voices=[];
+function loadVoices(){
+  voices=speechSynthesis.getVoices();
+  const sel=$('voice');sel.innerHTML='';
+  voices.forEach((v,i)=>{const o=document.createElement('option');o.value=v.name;o.textContent=v.name+' ('+v.lang+')';sel.appendChild(o)});
+  const saved=store.get('nova_voice','');
+  if(saved&&voices.some(v=>v.name===saved))sel.value=saved;
+  else{const f=voices.find(v=>/^fr/i.test(v.lang)&&/female|femme|fr-fr-x-(f|a|c)|amelie|audrey|marie/i.test(v.name))||voices.find(v=>/^fr/i.test(v.lang));if(f)sel.value=f.name}
+}
+if('speechSynthesis' in window){loadVoices();speechSynthesis.onvoiceschanged=loadVoices}
+
+let actx=null,src=null;
+function b64(ab){let t='';const u=new Uint8Array(ab);for(let i=0;i<u.length;i+=8192)t+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(t)}
+function clean(text){return text.replace(/(\p{L})-(\p{L})/gu,'$1$2').replace(/[*_#`>~]/g,'').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu,'')}
+async function gem(model,body,tts){
+  const key=store.get('nova_key','');
+  if(!key){$('setup').classList.add('show');throw new Error('Kle a manke. Antre l nan paramèt yo.')}
+  const models=tts?[model]:[model,'gemini-flash-latest','gemini-flash-lite-latest'].filter((x,i,a)=>x&&a.indexOf(x)===i);
+  let last='';
+  for(let m=0;m<models.length;m++){
+    for(let k=0;k<3;k++){
+      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(models[m])+':generateContent',
+        {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(body)});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok)return j;
+      last=j.error&&j.error.message?j.error.message:'Erè '+r.status;
+      if(tts&&(r.status===429||/quota|exceeded|RESOURCE/i.test(last)))throw new Error('quota: '+last);
+      const busy=r.status===503||r.status===429||r.status===500||/high demand|overloaded|unavailable/i.test(last);
+      if(!busy)throw new Error(last);
+      if(k===1||m>0)break;
+      setStatus('Gemini okipe, m ap eseye ankò...');
+      await new Promise(x=>setTimeout(x,1200*(k+1)));
+    }
+  }
+  throw new Error('Gemini okipe kounye a. Eseye ankò nan kèk minit. ('+last+')');
+}
+async function phon(text){
+  try{
+    const j=await gem(store.get('nova_model','gemini-2.5-flash'),{contents:[{parts:[{text:'Rewrite the following text so that a FRENCH text-to-speech voice will pronounce it correctly. If it is Haitian Creole, respell it using French spelling that approximates the real Creole sounds (for example ou→ou, w→ou, ò→o ouvert, è→è, an/en/on nasal sounds kept, ch→ch, j→j, r soft). Keep the same words, meaning and punctuation. If the text is not Haitian Creole, return it unchanged. Output ONLY the rewritten text, nothing else.\n\n'+clean(text)}]}]});
+    const o=((j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[]).map(x=>x.text||'').join('').trim();
+    return o||text;
+  }catch(e){return text}
+}
+async function geminiSpeak(text,ph){
+  const pOn=store.get('nova_phon','1')==='1';text=pOn?(ph||await phon(text)):text;
+  const tries=['Say warmly and gently: '+clean(text),clean(text)];
+  let p=null,why='';
+  for(const t of tries){
+    const j=await gem(store.get('nova_tts_model','gemini-2.5-flash-preview-tts'),{
+      contents:[{parts:[{text:t}]}],
+      generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:store.get('nova_tts_voice','Kore')}}}}},true);
+    const c=j.candidates&&j.candidates[0];
+    const parts=(c&&c.content&&c.content.parts)||[];
+    p=parts.find(x=>x.inlineData||x.inline_data);
+    if(p)break;
+    why=(c&&c.finishReason?c.finishReason:'okenn rezon')+(j.promptFeedback&&j.promptFeedback.blockReason?' / '+j.promptFeedback.blockReason:'')+(parts.length&&parts[0].text?' / modèl la retounen tèks: '+parts[0].text.slice(0,80):'');
+  }
+  if(!p)throw new Error('Pa gen odyo ('+why+').');
+  const bin=atob((p.inlineData||p.inline_data).data),n=bin.length>>1,f=new Float32Array(n);
+  for(let i=0;i<n;i++){let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v>=32768)v-=65536;f[i]=v/32768}
+  actx=actx||new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});
+  await actx.resume();
+  const buf=actx.createBuffer(1,n,24000);buf.copyToChannel(f,0);
+  return new Promise(res=>{src=actx.createBufferSource();src.buffer=buf;src.connect(actx.destination);src.onended=res;state='speaking';setStatus('NOVA ap pale (vwa Gemini)');src.start()});
+}
+function browserSpeak(text){
+  return new Promise(res=>{
+    if(!('speechSynthesis' in window)){res();return}
+    const u=new SpeechSynthesisUtterance(clean(text));
+    let v=voices.find(x=>x.name===$('voice').value);
+    if(!v||!/^fr/i.test(v.lang))v=voices.find(x=>/^fr/i.test(x.lang))||v;
+    if(v){u.voice=v;u.lang=v.lang}else u.lang='fr-FR';
+    u.rate=0.95;u.pitch=1.1;
+    u.onstart=()=>{state='speaking';setStatus('NOVA ap pale (vwa telefòn: '+(v?v.name+' '+v.lang:'pa gen vwa fransè')+')')};
+    u.onend=u.onerror=()=>res();
+    speechSynthesis.cancel();speechSynthesis.speak(u);
+  });
+}
+async function speak(text,ph){
+  if(store.get('nova_tts','1')==='1'){
+    for(let i=0;i<6;i++){
+      try{await geminiSpeak(text,ph);state='idle';setStatus('Peze bouton an pou w pale');return}
+      catch(e){
+        const quota=/^quota/.test(e.message);
+        if(i===5){state='idle';setStatus('Vwa a pa disponib kounye a. Li repons lan nan tèks.');return}
+        setStatus(quota?'M ap tann vwa a... ou ka li repons lan.':'M ap eseye vwa a ankò...');
+        await new Promise(r=>setTimeout(r,quota?20000:3000));
+      }
+    }
+  }
+  await browserSpeak(ph||text);state='idle';setStatus('Peze bouton an pou w pale');
+}
+
+/* Brain */
+const SYSTEM=`Ou se NOVA, yon asistan pèsonèl fitiris ak yon vwa fi cho, dous, ak atansyon. Ou pale Kreyòl Ayisyen kòrèk pa defo. Si moun nan pale fransè, anglè oswa espanyòl, reponn nan lang sa a. Fè repons kout (1 a 3 fraz) paske yo pral li ak vwa. Pa sèvi ak emoji, lis oswa mak markdown. Ede itilizatè a ak orè li, tach li, ak abitid li, epi poze yon sèl kesyon lè ou bezwen plis enfòmasyon.`;
+function sysText(){const m=getMem();return SYSTEM+(m.length?'\n\nSa ou deja konnen sou itilizatè a:\n- '+m.join('\n- '):'')+'\n\nOu ka itilize done sa yo pou pèsonalize repons ou, san ou pa repete yo san nesesite.'}
+async function ask(parts,histText){
+  const turn=parts.concat([]);
+  const j=await gem(store.get('nova_model','gemini-2.5-flash'),{systemInstruction:{parts:[{text:sysText()}]},contents:history.slice(-20).concat([{role:'user',parts:turn}])});
+  const out=((j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[]).map(x=>x.text||'').join('').trim();
+  if(!out)throw new Error('Pa gen repons. Eseye ankò.');
+  return out;
+}
+async function handleAudio(wav){
+  setStatus('NOVA ap koute...');
+  try{
+    const out=await ask([{inline_data:{mime_type:'audio/wav',data:b64(wav)}},{text:'Koute mesaj odyo a (li ka an Kreyòl Ayisyen, fransè, anglè oswa espanyòl). Reponn egzakteman nan fòma sa a: premye liy "TRANSKRIPSYON: " ak sa moun nan di egzakteman, epi liy swivan "REPONS: " ak repons ou. Si moun nan di yon enfòmasyon dirab sou li (non, orè, abitid, objektif, gou), ajoute yon liy "MEMWA: " apre repons lan ak fè a nan yon fraz kout. Anvan liy MEMWA a, ajoute yon liy "PWONONSYASYON: " ak repons ou reekri ak òtograf fransè pou yon vwa fransè pwononse l kòrèk (si repons lan an Kreyòl: ou→ou, w→ou, ò→o, èt sa yo pwononse tankou Kreyòl; si repons lan pa an Kreyòl, repete l menm jan). Sèlman sa moun nan di; pa devine anyen, epi pa janm sove modpas, nimewo kat oswa nimewo idantite.'}]);
+    const m=out.match(/TRANSKRIPSYON:\s*([\s\S]*?)\n\s*REPONS:\s*([\s\S]*)/i);
+    const said=m?m[1].trim():'(odyo)';let reply=m?m[2].trim():out;
+    let ph='';reply=reply.replace(/^\s*PWONONSYASYON:\s*(.+)$/gim,(_,f)=>{ph=f.trim();return''});
+    const facts=[];reply=reply.replace(/^\s*MEMWA:\s*(.+)$/gim,(_,f)=>{facts.push(f.trim());return''}).trim();
+    if(facts.length){const cur=getMem();facts.forEach(f=>{if(!cur.includes(f))cur.push(f)});setMem(cur)}
+    say(said,'u');say(reply,'n');
+    history.push({role:'user',parts:[{text:said}]},{role:'model',parts:[{text:reply}]});
+    await speak(reply,store.get('nova_phon','1')==='1'?ph:'');return true;
+  }catch(e){say(e.message,'n');state='idle';setStatus('Gen yon pwoblèm');return /okipe/i.test(e.message)}
+}
+
+/* Ears: enregistre, konvèti an WAV, voye bay Gemini */
+async function toWav(blob){
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const buf=await ctx.decodeAudioData(await blob.arrayBuffer());ctx.close();
+  const rate=16000,len=Math.max(1,Math.floor(buf.duration*rate));
+  const off=new OfflineAudioContext(1,len,rate),bs=off.createBufferSource();
+  bs.buffer=buf;bs.connect(off.destination);bs.start();
+  const d=(await off.startRendering()).getChannelData(0);
+  const o=new DataView(new ArrayBuffer(44+len*2));
+  const w=(p,t)=>{for(let i=0;i<t.length;i++)o.setUint8(p+i,t.charCodeAt(i))};
+  w(0,'RIFF');o.setUint32(4,36+len*2,true);w(8,'WAVEfmt ');o.setUint32(16,16,true);o.setUint16(20,1,true);o.setUint16(22,1,true);
+  o.setUint32(24,rate,true);o.setUint32(28,rate*2,true);o.setUint16(32,2,true);o.setUint16(34,16,true);w(36,'data');o.setUint32(40,len*2,true);
+  for(let i=0;i<len;i++){const v=Math.max(-1,Math.min(1,d[i]));o.setInt16(44+i*2,v<0?v*32768:v*32767,true)}
+  return o.buffer;
+}
+let mr=null,chunks=[],stream=null,auto=false,ac=null,raf=0;
+function resetBtn(){$('talk').classList.remove('on');$('talk').textContent='Kòmanse konvèsasyon'}
+function stopAll(){
+  auto=false;
+  try{if(mr&&mr.state==='recording'){mr.discard=true;mr.stop()}}catch(e){}
+  try{if(src)src.stop()}catch(e){}
+  if('speechSynthesis' in window)speechSynthesis.cancel();
+  cancelAnimationFrame(raf);resetBtn();state='idle';level=0;setStatus('Konvèsasyon an sispann');
+}
+async function startRec(){
+  if(!auto)return;
+  try{stream=stream&&stream.active?stream:await navigator.mediaDevices.getUserMedia({audio:true})}
+  catch(e){auto=false;resetBtn();setStatus('Mikwofòn bloke. Otorize l nan Chrome.');return}
+  ac=ac||new (window.AudioContext||window.webkitAudioContext)();await ac.resume();
+  const an=ac.createAnalyser();an.fftSize=1024;
+  const node=ac.createMediaStreamSource(stream);node.connect(an);
+  const buf=new Float32Array(an.fftSize);
+  chunks=[];const rec=new MediaRecorder(stream);mr=rec;rec.discard=false;
+  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  let heard=false,lastVoice=0;const t0=performance.now();
+  const loop=()=>{
+    if(rec.state!=='recording')return;
+    an.getFloatTimeDomainData(buf);let sum=0;for(let i=0;i<buf.length;i++)sum+=buf[i]*buf[i];
+    const rms=Math.sqrt(sum/buf.length);level=Math.min(1,rms*8);
+    const now=performance.now();
+    if(rms>0.02){heard=true;lastVoice=now}
+    if(heard&&now-lastVoice>1400)rec.stop();
+    else if(!heard&&now-t0>12000){rec.discard=true;rec.stop()}
+    else if(now-t0>40000)rec.stop();
+    else raf=requestAnimationFrame(loop);
+  };
+  rec.onstop=async()=>{
+    node.disconnect();cancelAnimationFrame(raf);level=0;$('talk').classList.remove('on');
+    if(rec.discard||!heard){if(auto)startRec();return}
+    state='idle';let ok=false;
+    try{ok=await handleAudio(await toWav(new Blob(chunks,{type:rec.mimeType})))}
+    catch(e){setStatus('Pa t kapab li odyo a.')}
+    if(auto&&ok)startRec();else if(auto){auto=false;resetBtn()}
+  };
+  rec.start();state='listening';$('talk').classList.add('on');
+  setStatus('M ap koute w... pale lè w pare');raf=requestAnimationFrame(loop);
+}
+$('talk').onclick=()=>{
+  if(auto){stopAll();return}
+  actx=actx||new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});actx.resume();
+  auto=true;$('talk').textContent='Sispann';startRec();
+};
+</script>
+</body>
+</html>
