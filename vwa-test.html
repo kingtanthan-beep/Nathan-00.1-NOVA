@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ht">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tès vwa</title>
+<style>
+body{margin:0;padding:16px;background:#050b14;color:#d8f4ff;font-family:system-ui,sans-serif;max-width:520px;margin:auto}
+textarea,input,button,select{width:100%;font:inherit;color:#d8f4ff;background:#0a1a2a;border:1px solid #12324a;border-radius:10px;padding:12px;margin:6px 0;box-sizing:border-box}
+button{background:linear-gradient(90deg,#31d7ff,#7a5cff);color:#021018;font-weight:600;border:0}
+#out{white-space:pre-wrap;color:#9fc3d6;font-size:14px;min-height:60px}
+</style>
+</head>
+<body>
+<h2>Tès vwa NOVA</h2>
+<textarea id="t" rows="3">Bonjou, mwen se NOVA. Kijan ou ye jodi a? Mwen la pou ede w ak tout sa w bezwen.</textarea>
+<select id="v"><option>Kore</option><option>Leda</option><option>Aoede</option><option>Zephyr</option><option>Despina</option><option>Sulafat</option></select>
+<button id="g">1. Vwa Gemini</button>
+<button id="k">2. Vwa Google Kreyòl</button>
+<button id="p">3. Vwa telefòn (fransè)</button>
+<div id="out">Peze yon bouton, koute, epi di m ki nimewo ki pi bon.</div>
+<script>
+const $=id=>document.getElementById(id);
+const log=m=>{$('out').textContent=m};
+function key(){try{return localStorage.getItem('nova_key')||''}catch(e){return ''}}
+
+$('k').onclick=async()=>{
+  log('Vwa Google ap jwe...');
+  const parts=$('t').value.match(/[^.!?]+[.!?]?/g)||[$('t').value];
+  try{
+    for(const c of parts){
+      const q=c.trim();if(!q)continue;
+      await new Promise((res,rej)=>{
+        const a=new Audio('https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ht&q='+encodeURIComponent(q));
+        a.onended=res;a.onerror=()=>rej(new Error('odyo pa chaje'));
+        const p=a.play();if(p&&p.catch)p.catch(rej);
+      });
+    }
+    log('Vwa Google fini. Sa w tande a bon?');
+  }catch(e){log('Vwa Google pa mache: '+e.message)}
+};
+
+$('g').onclick=async()=>{
+  const k=key();
+  if(!k){log('Pa gen kle Gemini. Louvri NOVA, antre kle a nan Paramèt, epi tounen isit la.');return}
+  log('Vwa Gemini ap prepare...');
+  try{
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent',{
+      method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':k},
+      body:JSON.stringify({contents:[{parts:[{text:'Say warmly and gently: '+$('t').value}]}],
+        generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:$('v').value}}}}})});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error&&j.error.message?j.error.message:'Erè '+r.status);
+    const c=j.candidates&&j.candidates[0];
+    const p=((c&&c.content&&c.content.parts)||[]).find(x=>x.inlineData||x.inline_data);
+    if(!p)throw new Error('pa gen odyo ('+(c&&c.finishReason||'?')+')');
+    const bin=atob((p.inlineData||p.inline_data).data),n=bin.length>>1,f=new Float32Array(n);
+    for(let i=0;i<n;i++){let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v>=32768)v-=65536;f[i]=v/32768}
+    const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});await ctx.resume();
+    const b=ctx.createBuffer(1,n,24000);b.copyToChannel(f,0);
+    const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.onended=()=>log('Vwa Gemini fini. Sa w tande a bon?');s.start();
+    log('Vwa Gemini ap jwe...');
+  }catch(e){log('Vwa Gemini pa mache: '+e.message)}
+};
+
+$('p').onclick=()=>{
+  const vs=speechSynthesis.getVoices();
+  const v=vs.find(x=>/^fr/i.test(x.lang));
+  const u=new SpeechSynthesisUtterance($('t').value);
+  if(v){u.voice=v;u.lang=v.lang}else u.lang='fr-FR';
+  u.onend=()=>log('Vwa telefòn fini.');
+  log('Vwa telefòn ap jwe ('+(v?v.name:'pa gen vwa fransè enstale')+')...');
+  speechSynthesis.cancel();speechSynthesis.speak(u);
+};
+</script>
+</body>
+</html>
